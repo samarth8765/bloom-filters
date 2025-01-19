@@ -8,59 +8,76 @@ import (
 )
 
 const DEFAULT_HASH_FUNCTIONS = 2
+const DEFAULT_BYTE_SIZE = 10
 
 type BloomFilter struct {
-	N        uint64
-	BitArray []bool
+	size     uint64
+	bitArray []byte
+	numHash  uint8
 	hashFns  []hash.Hash64
-	NumHash  uint8
 }
 
-func NewBloomFilter(n uint64, m uint8) *BloomFilter {
-	if m <= 0 {
-		m = DEFAULT_HASH_FUNCTIONS
+func NewBloomFilter(size uint64, numHash uint8) *BloomFilter {
+	if size == 0 {
+		size = DEFAULT_BYTE_SIZE
 	}
 
-	hashFns := make([]hash.Hash64, m)
-	for i := 0; i < int(m); i++ {
+	if numHash == 0 {
+		numHash = DEFAULT_HASH_FUNCTIONS
+	}
+
+	hashFns := make([]hash.Hash64, numHash)
+	for i := 0; i < int(numHash); i++ {
 		hashFns[i] = murmur3.New64WithSeed(rand.Uint32())
 	}
 
 	return &BloomFilter{
-		N:        n,
-		BitArray: make([]bool, n),
-		NumHash:  m,
+		size:     size,
+		bitArray: make([]byte, size),
+		numHash:  numHash,
 		hashFns:  hashFns,
 	}
 }
 
 func (bloom *BloomFilter) Add(key []byte) error {
-	for _, hashFn := range bloom.hashFns {
-		hashFn.Reset()
-		_, err := hashFn.Write(key)
-		if err != nil {
-			return err
-		}
-		hash := hashFn.Sum64() % (bloom.N)
-		bloom.BitArray[hash] = true
+	positions, err := bloom.getPositions(key)
+	if err != nil {
+		return err
 	}
+
+	for _, pos := range positions {
+		setBit(bloom.bitArray, pos)
+	}
+
 	return nil
 }
 
-func (bloom *BloomFilter) Check(key string) (bool, []uint64, error) {
-	hashIdxs := make([]uint64, bloom.NumHash)
+func (bloom *BloomFilter) Check(key []byte) (bool, []uint64, error) {
+	positions, err := bloom.getPositions(key)
+	if err != nil {
+		return false, nil, err
+	}
+
+	for _, pos := range positions {
+		if getBit(bloom.bitArray, pos) == 0 {
+			return false, positions, nil
+		}
+	}
+
+	return true, positions, nil
+}
+
+func (bloom *BloomFilter) getPositions(key []byte) ([]uint64, error) {
+	positions := make([]uint64, bloom.numHash)
 	for i, hashFn := range bloom.hashFns {
 		hashFn.Reset()
-		_, err := hashFn.Write([]byte(key))
+		_, err := hashFn.Write(key)
 		if err != nil {
-			return false, []uint64{}, err
+			return nil, err
 		}
-		hash := hashFn.Sum64() % (bloom.N)
-		if !bloom.BitArray[hash] {
-			return false, []uint64{}, nil
-		}
+		hash := hashFn.Sum64() % (bloom.size * 8)
+		positions[i] = hash
 
-		hashIdxs[i] = hash
 	}
-	return true, hashIdxs, nil
+	return positions, nil
 }

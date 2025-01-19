@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	filter := bloom.NewBloomFilter(50, 2)
+	filter := bloom.NewBloomFilter(10, 2)
 	arr := [...]string{"apple", "oranges", "bananas", "pears", "grapes", "mangoes"}
 
 	for _, fruit := range arr {
@@ -18,7 +18,7 @@ func main() {
 		"watermelon", "strawberries", "pineapples", "kiwi"}
 
 	for _, fruit := range testArray {
-		found, hashIdxs, err := filter.Check(fruit)
+		found, hashIdxs, err := filter.Check([]byte(fruit))
 		if err != nil {
 			panic(err)
 		}
